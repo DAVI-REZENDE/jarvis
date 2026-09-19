@@ -44,7 +44,7 @@ microfone (HyperX Cloud Stinger 2 Wireless, fallback: dispositivo padrão)
   -> stt.transcribe()            [faster-whisper "small", int8, pt-BR]
   -> orchestrator.handle_turn()
        -> memory.get_facts()     [fatos conhecidos do SQLite]
-       -> llm.chat()             [checagem determinística de ação -> Ollama/phi4-mini]
+       -> llm.chat()             [actions.handle() determinístico -> ação real ou Ollama/phi4-mini]
        -> memory.log_turn()      [grava turno bruto no conversation_log]
   -> tts.speak()                 [Kokoro TTS, voz pm_alex pt-BR]
   -> audio.play_audio()          [alto-falante, seta speaking_event durante a fala]
@@ -216,21 +216,76 @@ baixa reduz divagação e mistura de idioma; `repeat_penalty` alto demais
 (testado 1.3) piora bastante a coerência e faz o modelo ignorar a instrução
 de resposta curta, então foi mantido moderado (1.1). Duas funções principais:
 
-- `chat(user_text, facts=None) -> str`: monta o system prompt (`SYSTEM_PROMPT`
-  de `config.py`) injetando a lista de fatos conhecidos como bullet points, e
-  chama o Ollama. **Antes de chamar o modelo**, checa
+- `chat(user_text, facts=None) -> str`: primeiro chama `actions.handle(user_text)`
+  (Task 3) — se `user_text` casar com uma das ações reais suportadas (ver
+  `actions.py` abaixo), a ação já foi executada e sua resposta é retornada
+  direto, sem nenhuma chamada ao LLM. Se `actions.handle` retornar `None`
+  (não é uma dessas ações), cai na checagem antiga:
   `_is_action_request(user_text)` contra `ACTION_KEYWORDS` (uma tupla de
   palavras/frases como "abrir", "que horas", "liga pra" etc.); se der match,
-  retorna direto `CANT_DO_IT_REPLY = "Ainda não consigo fazer isso."` sem
-  nem chamar o LLM.
+  retorna `CANT_DO_IT_REPLY = "Ainda não consigo fazer isso."` sem chamar o
+  LLM (agora essa recusa cobre só pedidos de ação **fora** do pequeno
+  conjunto suportado, ex: "manda uma mensagem", "abrir" um app fora da
+  whitelist). Caso contrário, monta o system prompt normalmente e segue pro
+  chat comum.
 
-  **Por quê isso está em código e não no prompt:** foi tentado primeiro
-  resolver via instrução condicional no system prompt ("só recuse quando for
-  um pedido de ação real"), mas o phi4-mini (modelo pequeno) não seguia essa
-  regra de forma confiável — ou recusava demais (ficando prolixo/repetitivo)
-  ou não recusava quando devia. Mover a decisão para uma checagem
-  determinística em código eliminou essa inconsistência. Ver também a seção
-  de bugs corrigidos, item 2.
+  **Por quê a decisão de ação está em código e não no prompt/LLM:** foi
+  tentado primeiro resolver via instrução condicional no system prompt ("só
+  recuse quando for um pedido de ação real"), mas o phi4-mini (modelo
+  pequeno) não seguia essa regra de forma confiável — ou recusava demais
+  (ficando prolixo/repetitivo) ou não recusava quando devia. Mover a decisão
+  para uma checagem determinística em código eliminou essa inconsistência.
+  A mesma lógica se aplica à Task 3: o LLM **nunca** decide qual app abrir
+  nem gera o comando — isso seria abrir espaço pra injeção de comando via
+  fala do usuário. Toda decisão de intent (hora/data vs abrir app vs
+  nenhuma ação) é regex/keyword em `actions.py`, e o nome do app só chega em
+  `subprocess.run` depois de validado contra uma whitelist fixa. Ver também a
+  seção de bugs corrigidos, item 2.
+
+### `actions.py` (Task 3)
+Módulo novo com as únicas ações reais que o Jarvis executa hoje, chamado por
+`llm.chat()` antes de qualquer chamada ao LLM. Ponto de entrada único:
+`handle(text) -> str | None` — retorna a resposta já pronta se `text` casar
+com uma ação suportada (a ação já foi executada), ou `None` se não for
+nenhuma delas (nesse caso `llm.chat` decide entre a recusa padrão ou o chat
+normal).
+
+Duas ações suportadas, ambas com detecção 100% determinística (regex, sem
+LLM envolvido na decisão):
+- **Ver hora atual**: `_TIME_PATTERN` (`r"\bque\s+horas\b"`) casa "que
+  horas"; resposta 100% local via `datetime.now()`, formatada por extenso
+  pra soar natural no TTS (ex: "Agora são 14h32."). Nenhuma chamada ao
+  Ollama acontece nesse caminho.
+- **Ver data atual**: `_DATE_PATTERN` casa "que dia"/"que data"/"data de
+  hoje"/"dia de hoje"; resposta também 100% local, com dia da semana e mês
+  por extenso (ex: "Hoje é quinta-feira, 19 de setembro de 2026."). Também
+  sem chamada ao LLM.
+- **Abrir um app do Mac**: `_OPEN_APP_PATTERN` casa "abrir/abra/abre" (+
+  opcionalmente "o/a", "app/aplicativo") e captura o resto da frase como
+  candidato a nome de app — esse candidato **nunca** vai direto pro
+  `subprocess`. `_match_allowed_app(candidate)` primeiro remove frases de
+  preenchimento comuns ("por favor", "pra mim", "agora" etc.), depois checa
+  se alguma chave de `ALLOWED_APPS` (`config.py`) está contida no texto
+  limpo, e só se não achar nada tenta um fuzzy-match conservador
+  (`difflib.get_close_matches`, cutoff 0.7) contra as chaves da whitelist —
+  isso existe pra tolerar variações de fala tipo "abre o spotify pra mim"
+  sem nunca abrir algo fora da lista. Se e só se houver match, executa
+  `subprocess.run(["open", "-a", app_name], check=False)` — sempre como
+  lista de argumentos, nunca `shell=True` nem concatenação de string, pra
+  eliminar risco de shell injection. Se não houver match (app não
+  reconhecido ou fora da whitelist), retorna `None` e quem decide o que
+  fazer é `llm.chat` (cai na recusa padrão, porque "abrir" ainda está em
+  `ACTION_KEYWORDS`).
+
+  **Nota de nomes de app no macOS:** confirmado manualmente que `open -a`
+  precisa do nome real do bundle do app, que continua em inglês mesmo com o
+  macOS em pt-BR (ex: `open -a Notes` funciona, `open -a Notas` falha com
+  "Unable to find application named 'Notas'"). Por isso `ALLOWED_APPS` em
+  `config.py` mapeia a chave em português (o que o usuário fala) pro nome
+  real em inglês usado no `open -a`.
+
+Nenhuma outra ação foi implementada (nada de internet, mensagens, volume
+etc — fora de escopo da Task 3, deliberadamente).
 
 - `extract_facts(user_text, assistant_text="") -> list[str]`: extrai fatos
   novos usando **somente a fala do usuário** — o parâmetro `assistant_text`
@@ -285,6 +340,13 @@ módulo deve hardcodar esses valores:
   `WHISPER_LANGUAGE="pt"`.
 - LLM: `OLLAMA_URL="http://localhost:11434/api/chat"`,
   `OLLAMA_MODEL="phi4-mini"`.
+- `ALLOWED_APPS` (Task 3): dict de apps que `actions.py` tem permissão de
+  abrir via `open -a`, chave em português (o que o usuário fala, comparado
+  em minúsculas) -> valor com o nome real do app no macOS (ver nota em
+  `actions.py` sobre nomes ficarem em inglês mesmo em sistema pt-BR). Hoje:
+  `spotify`, `safari`, `notas` (Notes), `calculadora` (Calculator),
+  `mensagens` (Messages). Editável livremente pelo usuário — é a única fonte
+  de apps permitidos, nada fora dela é executado.
 - TTS: `TTS_LANG_CODE="p"`, `TTS_VOICE="pm_alex"`, `TTS_SAMPLE_RATE=24000`.
 - `MEMORY_DB_PATH`: `memory.db` na raiz do projeto.
 - `SYSTEM_PROMPT`: prompt curto e direto ("responda somente em português do
@@ -381,10 +443,12 @@ como está o clima para o voo hoje."), usada como argumento default em
 
 ## Limitações conhecidas
 
-- O agente **só recusa** qualquer pedido de ação real (abrir apps, ver
-  hora/data etc.) com a frase fixa "Ainda não consigo fazer isso." — não
-  executa nenhuma ação de fato ainda. Isso é o assunto da Task 3 do backlog
-  em `TASKS.md`.
+- O agente executa apenas um conjunto pequeno e fixo de ações reais (Task 3):
+  ver hora atual, ver data atual, e abrir um app do Mac restrito à whitelist
+  `ALLOWED_APPS` (`config.py`). Qualquer outro pedido de ação (mandar
+  mensagem, acessar internet, ligar pra alguém, controlar volume, abrir um
+  app fora da whitelist, etc) continua recebendo a recusa fixa "Ainda não
+  consigo fazer isso." — isso é deliberado e fora de escopo, não um bug.
 - `phi4-mini` às vezes produz respostas um pouco estranhas ou mistura idioma
   (ex.: uma palavra em espanhol no meio de uma frase em português) — é um
   modelo pequeno rodando local, qualidade inferior a modelos de nuvem maiores.

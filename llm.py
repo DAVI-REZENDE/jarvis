@@ -2,6 +2,7 @@ import json
 
 import requests
 
+import actions
 from config import OLLAMA_MODEL, OLLAMA_OPTIONS, OLLAMA_URL, SYSTEM_PROMPT
 
 FACT_EXTRACTION_PROMPT = (
@@ -57,6 +58,10 @@ def _chat(messages: list[dict]) -> str:
 
 
 def chat(user_text: str, facts: list[str] | None = None) -> str:
+    action_reply = actions.handle(user_text)
+    if action_reply is not None:
+        return action_reply
+
     if _is_action_request(user_text):
         return CANT_DO_IT_REPLY
 

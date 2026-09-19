@@ -24,6 +24,21 @@ TTS_SAMPLE_RATE = 24000
 
 MEMORY_DB_PATH = PROJECT_DIR / "memory.db"
 
+# Whitelist de apps que o Jarvis tem permissão de abrir via `open -a`.
+# Chave: nome em português como o usuário provavelmente fala (comparado em
+# minúsculas em actions.py). Valor: nome exato do app como o macOS reconhece
+# em `open -a "<valor>"` (nomes de apps do sistema ficam em inglês mesmo com
+# o macOS em pt-BR, ex: "Notes"/"Calculator", não "Notas"/"Calculadora" —
+# confirmado manualmente na Task 3). Edite esta lista pra adicionar/remover
+# apps permitidos; nada fora daqui pode ser aberto.
+ALLOWED_APPS = {
+    "spotify": "Spotify",
+    "safari": "Safari",
+    "notas": "Notes",
+    "calculadora": "Calculator",
+    "mensagens": "Messages",
+}
+
 SYSTEM_PROMPT = (
     "Você é Jarvis, um assistente de voz pessoal. Responda somente em português "
     "do Brasil, nunca misture palavras de outro idioma. Responda em 1 frase curta, "

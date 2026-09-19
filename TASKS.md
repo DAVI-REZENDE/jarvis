@@ -31,7 +31,7 @@ factual, pedido de ação, fato pessoal, pergunta ambígua) comparando respostas
 antes/depois. Não regredir o comportamento já corrigido (recusa determinística
 de ações, extração de fatos).
 
-## [ ] Task 3 — Capacidade real de ação (com guardrails de segurança)
+## [x] Task 3 — Capacidade real de ação (com guardrails de segurança)
 Hoje o agente só recusa qualquer pedido de ação. Implementar um conjunto
 pequeno e seguro de ações reais, com **detecção determinística em código**
 (não deixar o LLM gerar comandos livres — risco de injeção/segurança):
