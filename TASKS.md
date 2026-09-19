@@ -11,7 +11,7 @@ Status: `[ ]` pendente · `[~]` em andamento · `[x]` concluída
 
 ---
 
-## [x] Task 1 — Escrever CLAUDE.md com a spec completa do projeto
+## [~] Task 1 — Escrever CLAUDE.md com a spec completa do projeto
 Documentar en detalhe: objetivo do projeto, arquitetura (todos os módulos e
 o que cada um faz), decisões técnicas e o porquê (venv única, faster-whisper,
 Silero VAD, Ollama+phi4-mini, PySide6, SQLite), restrições da máquina (M1,
