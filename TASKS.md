@@ -46,7 +46,7 @@ a hora, pedir a data, abrir um app da whitelist, abrir um app fora da
 whitelist (deve recusar), e uma frase comum que não é pedido de ação (não
 pode ser confundida com uma).
 
-## [ ] Task 4 — Polimento visual da GUI (estética Jarvis/HUD)
+## [x] Task 4 — Polimento visual da GUI (estética Jarvis/HUD)
 Hoje a GUI é funcional mas simples (barras retas, sem animação). Melhorar:
 efeito de brilho/pulsação no indicador de status conforme o estado, waveform
 mais suave (interpolação/decaimento em vez de saltos bruscos), talvez um

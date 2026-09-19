@@ -1,11 +1,13 @@
+import math
 import sys
 import threading
 from collections import deque
 
 from PySide6.QtCore import QObject, Qt, QTimer, Signal
-from PySide6.QtGui import QColor, QPainter
+from PySide6.QtGui import QColor, QLinearGradient, QPainter, QPen
 from PySide6.QtWidgets import (
     QApplication,
+    QGraphicsDropShadowEffect,
     QHBoxLayout,
     QLabel,
     QMainWindow,
@@ -36,13 +38,30 @@ class Bridge(QObject):
 
 
 class Waveform(QWidget):
+    """Waveform HUD: barras com decaimento exponencial (sem saltos bruscos) e
+    cor sincronizada com o status atual do assistente."""
+
+    # Fator de suavização: quanto maior, mais "grudento"/lento o movimento.
+    _SMOOTHING = 0.7
+
     def __init__(self, parent=None):
         super().__init__(parent)
         self.setMinimumHeight(80)
+        # Valores já suavizados, prontos pra desenhar (não os níveis brutos).
         self._levels = deque([0.0] * 40, maxlen=40)
+        self._color = QColor(STATUS_COLORS["listening"])
+
+    def set_color(self, color_hex: str) -> None:
+        self._color = QColor(color_hex)
+        self.update()
 
     def push_level(self, level: float) -> None:
-        self._levels.append(min(level * 8, 1.0))
+        raw = min(level * 8, 1.0)
+        prev = self._levels[-1] if self._levels else 0.0
+        # Decaimento exponencial simples: mistura o valor anterior exibido
+        # com o novo valor bruto, em vez de pular direto pro novo nível.
+        smoothed = prev * self._SMOOTHING + raw * (1 - self._SMOOTHING)
+        self._levels.append(smoothed)
         self.update()
 
     def paintEvent(self, event):
@@ -55,13 +74,78 @@ class Waveform(QWidget):
         n = len(self._levels)
         bar_width = width / n
         painter.setPen(Qt.NoPen)
-        painter.setBrush(QColor("#38bdf8"))
 
         for i, level in enumerate(self._levels):
             bar_height = max(2, level * (height - 8))
             x = i * bar_width
             y = (height - bar_height) / 2
+
+            gradient = QLinearGradient(x, y, x, y + bar_height)
+            bright = QColor(self._color)
+            bright.setAlphaF(min(0.4 + level * 0.6, 1.0))
+            dim = QColor(self._color)
+            dim.setAlphaF(0.25)
+            gradient.setColorAt(0.0, bright)
+            gradient.setColorAt(1.0, dim)
+            painter.setBrush(gradient)
             painter.drawRoundedRect(x + 1, y, bar_width - 2, bar_height, 2, 2)
+
+
+class StatusRing(QWidget):
+    """Anel circular pulsante ao redor do status, estilo 'arc reactor':
+    um arco brilhante gira continuamente e um brilho interno pulsa, ambos
+    na cor do status atual. Avançado externamente (mesmo timer de 33ms do
+    waveform), sem QPropertyAnimation nem timer próprio."""
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setFixedSize(120, 120)
+        self._color = QColor(STATUS_COLORS["listening"])
+        self._phase = 0.0
+
+    def set_color(self, color_hex: str) -> None:
+        self._color = QColor(color_hex)
+        self.update()
+
+    def advance(self, step: float = 0.012) -> None:
+        self._phase = (self._phase + step) % 1.0
+        self.update()
+
+    def paintEvent(self, event):
+        painter = QPainter(self)
+        painter.setRenderHint(QPainter.Antialiasing)
+        rect = self.rect().adjusted(10, 10, -10, -10)
+
+        pulse = (math.sin(self._phase * 2 * math.pi) + 1) / 2  # 0..1
+
+        # Anel base, tênue.
+        dim_pen = QPen(QColor(self._color))
+        dim_color = QColor(self._color)
+        dim_color.setAlpha(50)
+        dim_pen.setColor(dim_color)
+        dim_pen.setWidth(2)
+        painter.setPen(dim_pen)
+        painter.setBrush(Qt.NoBrush)
+        painter.drawEllipse(rect)
+
+        # Arco brilhante girando.
+        arc_color = QColor(self._color)
+        arc_color.setAlpha(230)
+        arc_pen = QPen(arc_color)
+        arc_pen.setWidth(3)
+        arc_pen.setCapStyle(Qt.RoundCap)
+        painter.setPen(arc_pen)
+        span_angle = 70 * 16
+        start_angle = int(self._phase * 360 * 16)
+        painter.drawArc(rect, start_angle, span_angle)
+
+        # Brilho interno pulsando (expande/contrai e varia opacidade).
+        glow_color = QColor(self._color)
+        glow_color.setAlphaF(0.12 + 0.28 * pulse)
+        painter.setPen(Qt.NoPen)
+        painter.setBrush(glow_color)
+        inset = 22 + 8 * pulse
+        painter.drawEllipse(rect.adjusted(inset, inset, -inset, -inset))
 
 
 class MainWindow(QMainWindow):
@@ -95,7 +179,21 @@ class MainWindow(QMainWindow):
             f"color: {STATUS_COLORS['listening']}; font-size: 22px; font-weight: bold; "
             "letter-spacing: 4px;"
         )
+        # Glow colorido conforme o status, com blur pulsando suavemente.
+        self._glow = QGraphicsDropShadowEffect()
+        self._glow.setOffset(0, 0)
+        self._glow.setColor(QColor(STATUS_COLORS["listening"]))
+        self._glow.setBlurRadius(20)
+        self.status_label.setGraphicsEffect(self._glow)
+        self._glow_phase = 0.0
         layout.addWidget(self.status_label)
+
+        self.status_ring = StatusRing()
+        ring_row = QHBoxLayout()
+        ring_row.addStretch()
+        ring_row.addWidget(self.status_ring)
+        ring_row.addStretch()
+        layout.addLayout(ring_row)
 
         self.waveform = Waveform()
         layout.addWidget(self.waveform)
@@ -132,6 +230,13 @@ class MainWindow(QMainWindow):
 
     def _poll_level(self):
         self.waveform.push_level(audio.get_level())
+        self.status_ring.advance()
+
+        # Pulsar o glow do status_label (blur oscilando entre ~15 e ~40px)
+        # via seno sobre o mesmo timer de 33ms, sem QPropertyAnimation extra.
+        self._glow_phase = (self._glow_phase + 0.02) % 1.0
+        pulse = (math.sin(self._glow_phase * 2 * math.pi) + 1) / 2
+        self._glow.setBlurRadius(15 + pulse * 25)
 
     def _on_status(self, status: str):
         color = STATUS_COLORS.get(status, "#e2e8f0")
@@ -140,6 +245,9 @@ class MainWindow(QMainWindow):
             f"color: {color}; font-size: 22px; font-weight: bold; letter-spacing: 4px;"
         )
         self.status_label.setText(label)
+        self._glow.setColor(QColor(color))
+        self.status_ring.set_color(color)
+        self.waveform.set_color(color)
 
     def _on_transcript(self, role: str, text: str):
         speaker = "Você" if role == "user" else "Jarvis"

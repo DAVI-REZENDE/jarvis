@@ -112,13 +112,37 @@ Entrypoint mínimo: importa `main` de `gui.py` e chama. Sem lógica própria.
 Janela principal em PySide6 (`MainWindow`), estilo HUD escuro (paleta ciano/
 âmbar/verde sobre fundo quase preto `#0a0e14`). Elementos:
 - `status_label`: mostra "OUVINDO" (ciano), "PENSANDO" (âmbar) ou "FALANDO"
-  (verde), conforme o status emitido pelo orchestrator.
+  (verde), conforme o status emitido pelo orchestrator. Tem um
+  `QGraphicsDropShadowEffect` (glow) na cor do status atual, cujo
+  `blurRadius` pulsa suavemente (oscilação senoidal entre ~15px e ~40px)
+  a cada tick do `_level_timer` de 33ms — sem `QPropertyAnimation` nem timer
+  extra, só um cálculo de `math.sin` sobre uma fase acumulada.
+- `StatusRing` (Task 4): widget customizado (`QPainter`) abaixo do
+  `status_label`, um anel/arco estilo "arc reactor": um anel base tênue na
+  cor do status, um arco mais brilhante que gira continuamente
+  (`drawArc` avançando a fase a cada frame), e um brilho interno que
+  pulsa em raio e opacidade (seno). Também avançado pelo mesmo timer de
+  33ms via `advance()` — nenhum timer/animação adicional.
 - `Waveform`: widget customizado (`QPainter`) que desenha barras verticais a
   partir de um histórico (`deque`, 40 amostras) do nível de áudio, atualizado
-  por um `QTimer` a cada 33ms via `audio.get_level()`.
+  por um `QTimer` a cada 33ms via `audio.get_level()`. Desde a Task 4, os
+  valores exibidos passam por um decaimento exponencial simples
+  (`nivel_exibido = nivel_exibido * 0.7 + novo_nivel * 0.3`, aplicado em
+  `push_level`) em vez de saltar direto pro novo valor bruto — o histórico
+  guarda apenas os valores já suavizados. Cada barra é desenhada com um
+  `QLinearGradient` vertical (mais opaco no topo, mais transparente na base)
+  na cor do status atual (`set_color`), em vez de um ciano fixo — o waveform
+  agora reage visualmente também à mudança de status, não só ao nível.
 - `transcript`: `QTextEdit` somente leitura, mostra o histórico da conversa
   (usuário em cinza, Jarvis em verde).
 - Botão de mudo (`mute_button`): alterna `audio.muted_event`.
+
+Todos os efeitos visuais (glow, anel, gradiente do waveform) reutilizam o
+`_level_timer` já existente (30fps/33ms) — nenhum timer novo foi adicionado,
+e nenhuma dependência externa de animação (Qt/PySide6 puro:
+`QGraphicsDropShadowEffect`, `QLinearGradient`, `QPainter.drawArc`,
+`math.sin`), pra não pressionar ainda mais os 8GB de RAM compartilhados com
+Whisper/Kokoro/Ollama.
 
 O `orchestrator.run()` roda numa `threading.Thread` separada
 (`_run_orchestrator`), e comunica com a UI via `Bridge(QObject)` com dois
@@ -468,8 +492,9 @@ como está o clima para o voo hoje."), usada como argumento default em
 - Sem suporte a múltiplos idiomas simultâneos — fixado em português (pt-BR)
   em vários pontos (`WHISPER_LANGUAGE="pt"` em `stt.py`/`config.py`,
   `TTS_LANG_CODE="p"` em `tts.py`/`config.py`).
-- GUI é funcional mas visualmente simples (barras retas no waveform, sem
-  animações/efeitos de "glow" ainda) — assunto da Task 4 do backlog.
+- (Resolvido na Task 4) GUI agora tem waveform suavizado (decaimento
+  exponencial), glow pulsante no status e anel "arc reactor" — ver seção
+  `gui.py`.
 
 ## Como rodar / testar
 
