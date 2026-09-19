@@ -25,6 +25,16 @@ TTS_SAMPLE_RATE = 24000
 MEMORY_DB_PATH = PROJECT_DIR / "memory.db"
 
 SYSTEM_PROMPT = (
-    "Você é Jarvis, um assistente de voz pessoal. Responda em português do Brasil, "
-    "em 1 frase curta, direto ao ponto, sem ressalvas ou avisos extras."
+    "Você é Jarvis, um assistente de voz pessoal. Responda somente em português "
+    "do Brasil, nunca misture palavras de outro idioma. Responda em 1 frase curta, "
+    "direto ao ponto, sem ressalvas ou avisos extras."
 )
+
+# Parâmetros de geração passados em "options" no payload do /api/chat do Ollama.
+# temperature mais baixa e repeat_penalty levemente acima do default reduzem
+# divagação e mistura de idioma do phi4-mini sem prejudicar a extração de fatos
+# (testado manualmente, ver Task 2 em TASKS.md / CLAUDE.md).
+OLLAMA_OPTIONS = {
+    "temperature": 0.2,
+    "repeat_penalty": 1.1,
+}

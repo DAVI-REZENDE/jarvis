@@ -2,7 +2,7 @@ import json
 
 import requests
 
-from config import OLLAMA_MODEL, OLLAMA_URL, SYSTEM_PROMPT
+from config import OLLAMA_MODEL, OLLAMA_OPTIONS, OLLAMA_URL, SYSTEM_PROMPT
 
 FACT_EXTRACTION_PROMPT = (
     "Leia a fala do usuário abaixo (ignore completamente a resposta do assistente, ela não "
@@ -44,7 +44,12 @@ def _is_action_request(text: str) -> bool:
 def _chat(messages: list[dict]) -> str:
     response = requests.post(
         OLLAMA_URL,
-        json={"model": OLLAMA_MODEL, "messages": messages, "stream": False},
+        json={
+            "model": OLLAMA_MODEL,
+            "messages": messages,
+            "stream": False,
+            "options": OLLAMA_OPTIONS,
+        },
         timeout=60,
     )
     response.raise_for_status()

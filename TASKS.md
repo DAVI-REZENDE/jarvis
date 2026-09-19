@@ -20,7 +20,7 @@ parte, bugs já corrigidos e o raciocínio por trás (prolixidade do prompt,
 ação determinística vs LLM, extração de fatos desacoplada), e limitações
 conhecidas. Este arquivo é a fonte de contexto pra todos os agentes seguintes.
 
-## [ ] Task 2 — Melhorar naturalidade das respostas do LLM
+## [x] Task 2 — Melhorar naturalidade das respostas do LLM
 O phi4-mini às vezes responde de forma estranha/repetitiva/mistura idioma
 (ex: "Perim de Goiânia, você está?", "Puedo ajudá-lo"). Investigar e ajustar:
 revisar `SYSTEM_PROMPT`, testar variações de instrução e (se necessário)

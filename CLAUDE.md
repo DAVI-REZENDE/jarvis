@@ -208,7 +208,13 @@ masculina), `sample_rate=24000`.
 
 ### `llm.py`
 Cliente HTTP puro (via `requests`) para a API local do Ollama — sem o pacote
-pip `ollama`. Duas funções principais:
+pip `ollama`. `_chat` envia sempre um campo `options` no payload do
+`/api/chat` com `OLLAMA_OPTIONS` (`config.py`): `temperature=0.2` e
+`repeat_penalty=1.1`. Isso foi ajustado na Task 2 (ver seção de decisões
+técnicas) depois de testar empiricamente várias combinações — `temperature`
+baixa reduz divagação e mistura de idioma; `repeat_penalty` alto demais
+(testado 1.3) piora bastante a coerência e faz o modelo ignorar a instrução
+de resposta curta, então foi mantido moderado (1.1). Duas funções principais:
 
 - `chat(user_text, facts=None) -> str`: monta o system prompt (`SYSTEM_PROMPT`
   de `config.py`) injetando a lista de fatos conhecidos como bullet points, e
@@ -281,10 +287,18 @@ módulo deve hardcodar esses valores:
   `OLLAMA_MODEL="phi4-mini"`.
 - TTS: `TTS_LANG_CODE="p"`, `TTS_VOICE="pm_alex"`, `TTS_SAMPLE_RATE=24000`.
 - `MEMORY_DB_PATH`: `memory.db` na raiz do projeto.
-- `SYSTEM_PROMPT`: prompt atual, curto e direto ("responda em 1 frase curta,
-  direto ao ponto, sem ressalvas ou avisos extras") — **não** contém mais
-  nenhuma instrução sobre recusar ações; essa lógica foi removida do prompt e
-  virou checagem determinística em `llm.py` (ver bug 2 e seção `llm.py`).
+- `SYSTEM_PROMPT`: prompt curto e direto ("responda somente em português do
+  Brasil, nunca misture palavras de outro idioma... 1 frase curta, direto ao
+  ponto, sem ressalvas ou avisos extras") — **não** contém mais nenhuma
+  instrução sobre recusar ações; essa lógica foi removida do prompt e virou
+  checagem determinística em `llm.py` (ver bug 2 e seção `llm.py`). A frase
+  de guarda contra mistura de idioma foi adicionada na Task 2 (ver decisões
+  técnicas) — reduz mas não elimina totalmente a mistura de espanhol, que é
+  parcialmente uma limitação inerente do phi4-mini (ver limitações
+  conhecidas).
+- `OLLAMA_OPTIONS`: dict `{"temperature": 0.2, "repeat_penalty": 1.1}` passado
+  em toda chamada ao `/api/chat` (Task 2). Ver seção `llm.py` para o
+  raciocínio por trás dos valores escolhidos.
 
 ### `TASKS.md`
 Backlog ativo de melhorias em andamento, executado por agentes dedicados um
@@ -313,6 +327,8 @@ como está o clima para o voo hoje."), usada como argumento default em
 | Extração de fatos roda async após a resposta falada | Não atrasar a latência percebida pelo usuário com uma chamada extra ao LLM |
 | Headset HyperX em vez do mic embutido | Qualidade de STT ruim com o mic embutido do Mac (ruído/reverb) |
 | Prompt de fatos ignora explicitamente frases negativas | Extração gerava fatos inúteis tipo "não sabe profissão do usuário" (ver bug 1) |
+| `temperature=0.2`, `repeat_penalty=1.1` no Ollama (Task 2) | Testado empiricamente: reduz divagação/mistura de idioma sem quebrar a instrução de resposta curta. `repeat_penalty=1.3` foi testado e piorou muito a coerência (respostas longas e desconexas) — descartado |
+| Não usar few-shot examples no `SYSTEM_PROMPT` (Task 2) | Testado: few-shot fez o modelo ignorar a instrução de "1 frase curta" em perguntas abertas (chegou a responder com lista numerada de 5 itens) — pior que sem few-shot |
 
 ## Bugs corrigidos / lições aprendidas
 
@@ -372,6 +388,15 @@ como está o clima para o voo hoje."), usada como argumento default em
 - `phi4-mini` às vezes produz respostas um pouco estranhas ou mistura idioma
   (ex.: uma palavra em espanhol no meio de uma frase em português) — é um
   modelo pequeno rodando local, qualidade inferior a modelos de nuvem maiores.
+  Na Task 2, ajustar `SYSTEM_PROMPT` (guarda explícita contra mistura de
+  idioma) e `OLLAMA_OPTIONS` (`temperature=0.2`, `repeat_penalty=1.1`) reduziu
+  a frequência do problema nos testes manuais, mas não eliminou por completo
+  — é considerada uma limitação residual e aceitável do modelo, não algo a
+  perseguir mais agressivamente (tentativas mais fortes, como
+  `repeat_penalty=1.3`, pioraram a coerência geral). Também foi observado que
+  o modelo às vezes interpreta mal um termo isolado incomum (ex.: "setor
+  Perim" confundido com "perímetro") — não é mistura de idioma, é limitação
+  de compreensão do modelo pequeno em geral.
 - A extração de fatos às vezes fragmenta informação relacionada em entradas
   separadas em vez de uma frase coesa (ex.: "mora em Goiânia" e "no setor
   Perim" como duas entradas em vez de uma). A deduplicação em `memory.py`
