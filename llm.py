@@ -5,10 +5,12 @@ import requests
 from config import OLLAMA_MODEL, OLLAMA_URL, SYSTEM_PROMPT
 
 FACT_EXTRACTION_PROMPT = (
-    "Leia a conversa abaixo e extraia fatos duráveis sobre o usuário (profissão, cidade, "
-    "preferências, nome preferido, etc). Responda SOMENTE com uma lista JSON de strings, "
-    'ex: ["mora em São Paulo", "prefere ser chamado de Davi"]. '
-    "Se não houver fatos duráveis, responda [].\n\nConversa:\n"
+    "Leia a conversa abaixo e extraia SOMENTE fatos novos, positivos e confirmados pelo "
+    "usuário (profissão, cidade, preferências, nome preferido, etc). "
+    'Responda SOMENTE com uma lista JSON de strings, ex: ["mora em São Paulo", "prefere ser chamado de Davi"]. '
+    "NUNCA invente um fato, e NUNCA inclua frases negativas ou sobre falta de informação "
+    '(ex: "não sabe X", "não tem Y", "assistente não sabe Z") — isso não é um fato, é ausência '
+    "de fato, e deve ser ignorado. Se não houver fatos novos e confirmados, responda [].\n\nConversa:\n"
 )
 
 
@@ -48,10 +50,17 @@ def extract_facts(user_text: str, assistant_text: str) -> list[str]:
             raw = raw[4:]
         raw = raw.strip()
 
+    negation_markers = ("não sabe", "não tem", "não conhece", "não possui", "sem informação")
+
     try:
         facts = json.loads(raw)
         if isinstance(facts, list):
-            return [str(f).strip() for f in facts if str(f).strip()]
+            return [
+                str(f).strip()
+                for f in facts
+                if str(f).strip()
+                and not any(marker in str(f).lower() for marker in negation_markers)
+            ]
     except json.JSONDecodeError:
         pass
     return []
