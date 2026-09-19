@@ -4,6 +4,7 @@ PROJECT_DIR = Path(__file__).resolve().parent
 
 SAMPLE_RATE = 16000
 CHANNELS = 1
+INPUT_DEVICE_NAME = "HyperX Cloud Stinger 2 Wireless"
 VAD_CHUNK_SAMPLES = 512  # janela exigida pelo Silero VAD em 16kHz
 
 VAD_SPEECH_THRESHOLD = 0.5
