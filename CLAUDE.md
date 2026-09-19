@@ -531,7 +531,28 @@ como está o clima para o voo hoje."), usada como argumento default em
   `ALLOWED_APPS` (`config.py`). Qualquer outro pedido de ação (mandar
   mensagem, acessar internet, ligar pra alguém, controlar volume, abrir um
   app fora da whitelist, etc) continua recebendo a recusa fixa "Ainda não
-  consigo fazer isso." — isso é deliberado e fora de escopo, não um bug.
+  consigo fazer isso." — isso é deliberado e fora de escopo, não um bug. Note
+  que isso já não é mais "recusa qualquer pedido de ação": desde a Task 3 há
+  duas ações reais suportadas (hora/data e abrir app da whitelist).
+- **(Descoberto na Task 6 — QA final) Fatos conflitantes não são resolvidos
+  nem versionados.** `memory.py` só adiciona e deduplica por substring; não
+  existe conceito de "atualizar" ou "substituir" um fato antigo quando o
+  usuário diz algo nele contraditório (ex: usuário disse "moro em Goiânia"
+  numa sessão e depois "moro em Belo Horizonte e trabalho como designer" em
+  outra — ambos os fatos de localização ficam salvos, coexistindo). Testado
+  manualmente: com os dois fatos de cidade no banco, `llm.chat("Onde eu
+  moro?", facts=facts)` respondeu com a cidade mais antiga (Goiânia), não a
+  mais recente — o LLM escolhe arbitrariamente entre fatos conflitantes, sem
+  garantia de preferir o mais novo. Isso é uma limitação real, não corrigida
+  nesta task (fora do escopo do QA, seria uma nova feature de "atualização de
+  fato" com sua própria lógica de detecção de conflito) — mas documentada
+  aqui para qualquer trabalho futuro nessa área.
+- **(Confirmado na Task 6) Mistura de idioma residual.** Mesmo com a guarda
+  no `SYSTEM_PROMPT` e `OLLAMA_OPTIONS` da Task 2, o phi4-mini ainda comete
+  deslizes ocasionais — no QA desta task, a pergunta "Qual a capital da
+  França?" retornou "París" (grafia espanhola; em português seria "Paris").
+  Consistente com a limitação já documentada abaixo; apenas reforça que não
+  foi eliminada, só reduzida.
 - `phi4-mini` às vezes produz respostas um pouco estranhas ou mistura idioma
   (ex.: uma palavra em espanhol no meio de uma frase em português) — é um
   modelo pequeno rodando local, qualidade inferior a modelos de nuvem maiores.
@@ -562,6 +583,88 @@ como está o clima para o voo hoje."), usada como argumento default em
   exponencial), glow pulsante no status e anel "arc reactor" — ver seção
   `gui.py`.
 
+## Coisas já tentadas e que NÃO funcionaram (não repetir)
+
+Registrado aqui pra qualquer agente futuro não perder tempo testando de novo
+algo que já foi tentado e descartado com evidência real:
+
+- **Few-shot examples no `SYSTEM_PROMPT` do chat geral (Task 2).** Adicionar
+  exemplos de pergunta/resposta ao prompt de chat aberto fez o phi4-mini
+  ignorar a instrução de "1 frase curta" — chegou a responder com lista
+  numerada de 5 itens numa pergunta simples. Pior que sem few-shot. Não
+  confundir com o caso de `FACT_EXTRACTION_PROMPT` abaixo, que é diferente.
+- **`repeat_penalty` alto (1.3) no Ollama (Task 2).** Testado como tentativa
+  de reduzir ainda mais divagação/repetição. Resultado: piorou bastante a
+  coerência geral (respostas longas e desconexas) e o modelo passou a ignorar
+  a instrução de resposta curta. Valor final mantido em `1.1` (moderado).
+- **Dedup de fatos por similaridade em `memory.py` (Task 5).** Testados
+  `difflib.SequenceMatcher.ratio()` e Jaccard por palavras (sem stopwords)
+  como substitutos do substring match simples. Ambos deram falsos positivos
+  perigosos com um único threshold fixo: `SequenceMatcher` pontuou mais alto
+  (0.836) para dois nomes preferidos **diferentes** ("Chefe" vs "Davi") do que
+  para uma duplicata real (0.700, "mora em Goiânia" vs "mora na cidade de
+  Goiânia"); Jaccard pontuou 0.667 tanto pra duplicata quanto pra um par de
+  fatos **opostos** ("gosta de café" vs "não gosta de café"). Risco de perder
+  silenciosamente um fato genuinamente novo/atualizado é pior que o problema
+  atual (raras quase-duplicatas). Mantido substring simples.
+- **Mais de um few-shot example no `FACT_EXTRACTION_PROMPT` (Task 5).**
+  Diferente do chat geral, um único exemplo rico ajudou bastante na extração
+  (tarefa mais mecânica/estruturada). Mas dois exemplos pioraram a
+  estabilidade: erro de parse de JSON numa repetição, fato de preferência
+  negativa sumindo em outra. Mantido exatamente **um** exemplo.
+- **Testar VAD/áudio de ponta a ponta de forma 100% automatizada** (tocar
+  áudio via `afplay` e gravar de volta via `sounddevice.rec` num processo não
+  interativo) — não mostrou variação de nível perceptível, provavelmente por
+  permissões de áudio/roteamento do macOS em processo não-interativo. Não
+  confiável; testes de VAD/áudio real exigem uma pessoa falando de verdade.
+
+## QA final (Task 6)
+
+Executado em 2026-09-19. Toda a bateria abaixo foi validada chamando as
+funções Python diretamente (sem microfone real disponível no ambiente do
+agente), simulando o que a fala transcrita produziria:
+
+- Saudação ("Oi, tudo bem?") → resposta curta e coerente via `llm.chat`. OK.
+- Pergunta factual ("Qual a capital da França?") → resposta curta, mas com o
+  deslize de idioma residual já conhecido ("París" em vez de "Paris" — ver
+  Limitações conhecidas). Comportamento aceito, não é regressão nova.
+- Pedido de hora e de data → resposta 100% determinística via `actions.py`,
+  confirmado por tempo de resposta ~0ms (sem chamada HTTP ao Ollama) tanto
+  via `llm.chat` quanto chamando `actions.handle` direto.
+- Abrir app da whitelist ("Abre a calculadora pra mim") → `Calculator.app`
+  abriu de verdade (confirmado via `ps aux`), e foi fechado ao final do teste
+  (`osascript -e 'quit app "Calculator"'`), sem processo residual.
+- Abrir app fora da whitelist ("Abre o Chrome pra mim") → recusa fixa
+  corretamente ("Ainda não consigo fazer isso."), nenhum processo novo
+  aberto.
+- Fato pessoal novo ("Moro em Belo Horizonte e trabalho como designer.") →
+  `extract_facts` retornou `['mora em Belo Horizonte', 'trabalha como
+  designer']` corretamente separado por assunto (localização vs profissão,
+  como o prompt instrui). `memory.add_fact` + `memory.get_facts()` refletiram
+  os dois fatos.
+- Persistência entre "sessões": fatos gravados foram lidos de volta com uma
+  conexão SQLite nova, em um processo Python novo, confirmando que
+  `memory.db` em disco reflete os dados (sem depender de estado em memória do
+  processo). Os fatos persistidos também apareceram corretamente no contexto
+  passado para `llm.chat(..., facts=memory.get_facts())` — o LLM usou um dos
+  fatos de localização salvos pra responder "Onde eu moro?" (ver limitação
+  nova sobre fatos conflitantes acima: escolheu o fato mais antigo, não o
+  recém-adicionado, porque havia dois fatos de cidade no banco de testes
+  anteriores). Os dois fatos fabricados pra este teste (Belo Horizonte/
+  designer) foram removidos do `memory.db` ao final, pra não poluir a memória
+  real do projeto com dados de teste.
+- `jarvis` (GUI) subiu em background por ~10s sem erro (só um
+  `FutureWarning` benigno do `torch.jit.load`, não relacionado a nenhuma
+  mudança deste backlog) e foi encerrado ao final sem deixar processo
+  residual.
+- Revisão de consistência entre Tasks 2/3/5 em `llm.py`/`config.py`: nenhuma
+  mudança de uma task sobrescreveu ou quebrou silenciosamente outra —
+  `OLLAMA_OPTIONS` (Task 2) é usado tanto no chat quanto na extração de fatos
+  sem prejudicar o resultado da Task 5 (reconfirmado com testes de "não gosto
+  de café" e "não sei minha profissão", ambos com o comportamento correto
+  documentado na Task 5). Nenhuma correção de código foi necessária nesta
+  task — o backlog chegou coeso ao final.
+
 ## Como rodar / testar
 
 ```sh
@@ -582,10 +685,13 @@ ollama list
 brew services list
 ```
 
-## Backlog ativo
+## Backlog (concluído)
 
-Há um backlog orquestrado de melhorias em `TASKS.md`, executado por agentes
-dedicados em ordem (Task 1: este arquivo; Task 2: naturalidade das respostas
-do LLM; Task 3: capacidade real de ação com guardrails; Task 4: polimento
-visual da GUI; Task 5: granularidade da extração de fatos; Task 6: QA final).
-Consulte `TASKS.md` diretamente para o estado e detalhes de cada task.
+O backlog orquestrado de melhorias em `TASKS.md` foi **concluído em
+2026-09-19** (Task 1: este arquivo; Task 2: naturalidade das respostas do
+LLM; Task 3: capacidade real de ação com guardrails; Task 4: polimento visual
+da GUI; Task 5: granularidade da extração de fatos; Task 6: QA final —
+documentada na seção "QA final (Task 6)" acima). Consulte `TASKS.md` para o
+resumo de cada task. Não há mais tasks pendentes nesse backlog; qualquer
+trabalho novo deve ser tratado como uma demanda separada, não uma
+continuação implícita dele.

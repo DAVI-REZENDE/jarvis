@@ -1,3 +1,18 @@
+> **Backlog concluído em 2026-09-19.** Resumo de 1 linha por task:
+> - Task 1: `CLAUDE.md` escrito com a spec técnica completa do projeto.
+> - Task 2: naturalidade das respostas do LLM melhorada (`SYSTEM_PROMPT` +
+>   `OLLAMA_OPTIONS` com `temperature=0.2`/`repeat_penalty=1.1`).
+> - Task 3: ações reais implementadas (hora/data e abrir app via whitelist),
+>   com detecção 100% determinística em `actions.py`, sem risco de injeção.
+> - Task 4: GUI ganhou polimento visual (waveform suavizado, glow pulsante,
+>   anel "arc reactor"), sem libs pesadas novas.
+> - Task 5: extração de fatos revisada pra agrupar informação relacionada
+>   (ex: bairro+cidade) e preservar preferências negativas genuínas.
+> - Task 6: QA final ponta a ponta, sem regressões encontradas entre as
+>   tasks anteriores; `CLAUDE.md` e `TASKS.md` atualizados com o estado
+>   final e uma nova limitação descoberta (fatos conflitantes não são
+>   versionados/resolvidos).
+
 # Jarvis — Backlog orquestrado
 
 Cada task é executada por um agente dedicado, um de cada vez, em ordem. Todo
@@ -67,7 +82,7 @@ substring-match simples, que pode ser frágil). Testar com frases compostas
 reais (endereço com bairro+cidade, nome+profissão+preferência na mesma
 frase) e confirmar que os fatos salvos ficam coerentes e não duplicados.
 
-## [ ] Task 6 — QA final e fechamento
+## [x] Task 6 — QA final e fechamento
 Revisar todas as mudanças das tasks 2-5 funcionando juntas (rodar uma
 conversa real ponta a ponta cobrindo: saudação, pergunta factual, pedido de
 hora/data, pedido de abrir app da whitelist, fato pessoal novo, e reiniciar
