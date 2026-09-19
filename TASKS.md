@@ -57,7 +57,7 @@ por alguns minutos e descrevendo o resultado (não há como capturar
 screenshot automaticamente; documentar o que foi implementado pro usuário
 conferir).
 
-## [ ] Task 5 — Melhorar granularidade/qualidade da extração de fatos
+## [x] Task 5 — Melhorar granularidade/qualidade da extração de fatos
 Hoje fatos relacionados saem fragmentados (ex: "mora em Goiânia" e "no setor
 Perim" como duas entradas separadas em vez de uma). Revisar
 `FACT_EXTRACTION_PROMPT` em `llm.py` pra produzir fatos mais completos e

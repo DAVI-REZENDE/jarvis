@@ -328,6 +328,42 @@ etc — fora de escopo da Task 3, deliberadamente).
   resposta do modelo, com tratamento de blocos ```` ```json ```` e fallback
   para lista vazia em caso de JSON inválido.
 
+  **Task 5 — granularidade/qualidade da extração.** `FACT_EXTRACTION_PROMPT`
+  foi revisado porque a extração fragmentava informação relacionada (ex: a
+  frase "moro em Goiânia, no setor Perim, trabalho como programador" perdia
+  completamente "no setor Perim", produzindo só `['Moro em Goiânia',
+  'Trabalho como programador']`). O prompt agora instrui explicitamente a
+  **agrupar** informação que pertence junta num único fato coeso (ex:
+  bairro/setor + cidade = um fato só), a produzir frases naturais e
+  autocontidas (proibindo formato "chave: valor" tipo "Nome: Davi"), e a
+  distinguir claramente dois tipos de negação: (1) ausência de informação
+  ("não sabe X") — continua descartado — vs (2) preferência negativa genuína
+  do usuário ("não gosto de café") — agora explicitamente mantida como fato
+  válido (o texto antigo do prompt dizia "NUNCA inclua frases negativas", o
+  que fazia o modelo descartar até preferências negativas reais; teste
+  manual confirmou "Eu não gosto de café." zerava para `[]` antes da
+  correção). `negation_markers` em código não precisou mudar — já era restrito
+  a marcadores de ausência de informação ("não sabe", "não tem" etc.), nunca
+  batia com "não gosta"/"não gosto".
+
+  **Few-shot funcionou bem aqui, ao contrário do `SYSTEM_PROMPT` geral (Task
+  2).** Foi testado explicitamente por instrução deste backlog, já que a Task
+  2 tinha descartado few-shot no prompt de chat aberto. Resultado real: sem
+  nenhum exemplo no prompt, o phi4-mini continuava fragmentando/alucinando
+  (`['Moro em Goiânia', 'Perigo de Goiânia', 'Trabalho como Programador']` —
+  chegou a inventar "Perigo de Goiânia" a partir de "setor Perim"). Com **um**
+  exemplo rico no prompt (a própria frase do setor Perim, mostrando o
+  agrupamento correto), o resultado ficou estável e correto em repetições:
+  `['moro no setor Perim, em Goiânia', 'trabalho como programador']`. Uma
+  variante com **dois** exemplos foi testada e piorou a estabilidade (erro de
+  parse de JSON numa repetição, fato de preferência negativa sumindo em outra
+  repetição) — provavelmente por o modelo pequeno "seguir demais" o padrão de
+  frase composta dos exemplos e se confundir com entradas mais simples que não
+  se encaixam nesse padrão. Conclusão: few-shot ajuda numa tarefa mecânica/
+  estruturada como extração de JSON (diferente de gerar uma resposta de chat
+  aberta), mas só com **um único exemplo bem escolhido** — mais que isso
+  reintroduz instabilidade, mesmo aqui.
+
 Bloco `__main__`: `python llm.py` testa `chat()` e `extract_facts()` em
 sequência, imprimindo os resultados.
 
@@ -344,6 +380,27 @@ nunca commitar). Duas tabelas:
 - `conversation_log (id, role, content, timestamp)`: histórico bruto de
   turnos (não usado para montar o prompt do LLM — o prompt usa apenas
   `facts`, não o histórico bruto).
+
+  **Task 5 — dedup foi avaliada e mantida como substring simples,
+  deliberadamente.** Foram testados dois substitutos por similaridade —
+  `difflib.SequenceMatcher.ratio()` (caractere a caractere) e Jaccard sobre
+  conjunto de palavras (sem stopwords) — com pares reais de teste. Resultado
+  real, não hipotético: nenhum dos dois separa de forma confiável duplicata
+  real de fato genuinamente diferente com um único threshold. Exemplos
+  medidos: `SequenceMatcher` deu 0.836 para `"prefere ser chamado de Chefe"`
+  vs `"prefere ser chamado de Davi"` (nomes **diferentes**, não deveria ser
+  duplicata) — mais alto que 0.700 para o par que **é** duplicata real
+  (`"mora em Goiânia"` vs `"mora na cidade de Goiânia"`). Jaccard por palavra
+  foi ainda mais perigoso: deu 0.667 para `"gosta de café"` vs `"não gosta de
+  café"` — **fatos opostos**, mesma pontuação do par de duplicata real. Usar
+  qualquer um desses com threshold fixo arriscaria descartar silenciosamente
+  um fato genuinamente nono (ex: perder que o usuário passou a não gostar de
+  algo que antes gostava) — pior que o problema atual (raramente, duas
+  entradas quase-duplicatas coexistindo). Por isso a dedup em `memory.py`
+  continua substring case-insensitive simples; a fragmentação de fatos (causa
+  raiz da maioria dos quase-duplicados) já foi atacada na origem via
+  `FACT_EXTRACTION_PROMPT` (ver seção `llm.py`), o que reduz bastante a
+  frequência do problema sem precisar de uma dedup mais arriscada.
 
 `get_facts(limit=50)` retorna os mais recentes primeiro (`ORDER BY
 created_at DESC`).
@@ -415,6 +472,8 @@ como está o clima para o voo hoje."), usada como argumento default em
 | Prompt de fatos ignora explicitamente frases negativas | Extração gerava fatos inúteis tipo "não sabe profissão do usuário" (ver bug 1) |
 | `temperature=0.2`, `repeat_penalty=1.1` no Ollama (Task 2) | Testado empiricamente: reduz divagação/mistura de idioma sem quebrar a instrução de resposta curta. `repeat_penalty=1.3` foi testado e piorou muito a coerência (respostas longas e desconexas) — descartado |
 | Não usar few-shot examples no `SYSTEM_PROMPT` (Task 2) | Testado: few-shot fez o modelo ignorar a instrução de "1 frase curta" em perguntas abertas (chegou a responder com lista numerada de 5 itens) — pior que sem few-shot |
+| Usar **um** few-shot example no `FACT_EXTRACTION_PROMPT` (Task 5) | Testado: sem exemplo o modelo fragmentava/alucinava fatos compostos; com um exemplo rico ficou estável; com dois exemplos a estabilidade piorou (erro de parse JSON, fato sumindo em repetição) — diferente da conclusão da Task 2 porque extração de JSON é tarefa mais mecânica/estruturada que resposta de chat aberta |
+| Manter dedup por substring simples em `memory.py` (Task 5) | Testado `SequenceMatcher.ratio()` e Jaccard por palavra como alternativas — ambos deram falsos positivos perigosos (ex: nomes preferidos diferentes, ou fato oposto "não gosta de X" vs "gosta de X" pontuando tão "similar" quanto duplicata real) sem um threshold confiável; risco de descartar fato genuinamente novo é pior que o problema atual |
 
 ## Bugs corrigidos / lições aprendidas
 
@@ -485,10 +544,17 @@ como está o clima para o voo hoje."), usada como argumento default em
   o modelo às vezes interpreta mal um termo isolado incomum (ex.: "setor
   Perim" confundido com "perímetro") — não é mistura de idioma, é limitação
   de compreensão do modelo pequeno em geral.
-- A extração de fatos às vezes fragmenta informação relacionada em entradas
-  separadas em vez de uma frase coesa (ex.: "mora em Goiânia" e "no setor
-  Perim" como duas entradas em vez de uma). A deduplicação em `memory.py`
-  (substring match simples) pode ser frágil nesses casos.
+- (Resolvido na Task 5) A extração de fatos fragmentava informação
+  relacionada em entradas separadas em vez de uma frase coesa (ex.: "mora em
+  Goiânia" e "no setor Perim" como duas entradas em vez de uma) — corrigido
+  no `FACT_EXTRACTION_PROMPT` com instrução explícita de agrupamento + um
+  único few-shot example. A deduplicação em `memory.py` continua sendo
+  substring match simples (decisão deliberada, ver seção `memory.py`) —
+  ainda pode deixar passar duas entradas com fraseamento bem diferente para
+  o mesmo fato (ex.: "mora em Goiânia" vs "mora na cidade de Goiânia" em
+  turnos separados), mas isso é raro na prática agora que a causa raiz
+  (fragmentação numa única extração) foi corrigida, e alternativas por
+  similaridade testadas se mostraram mais arriscadas (ver `memory.py`).
 - Sem suporte a múltiplos idiomas simultâneos — fixado em português (pt-BR)
   em vários pontos (`WHISPER_LANGUAGE="pt"` em `stt.py`/`config.py`,
   `TTS_LANG_CODE="p"` em `tts.py`/`config.py`).

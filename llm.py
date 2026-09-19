@@ -7,12 +7,28 @@ from config import OLLAMA_MODEL, OLLAMA_OPTIONS, OLLAMA_URL, SYSTEM_PROMPT
 
 FACT_EXTRACTION_PROMPT = (
     "Leia a fala do usuário abaixo (ignore completamente a resposta do assistente, ela não "
-    "importa aqui) e extraia SOMENTE fatos novos e positivos que o usuário afirmou sobre si "
-    "mesmo (profissão, cidade, preferências, nome preferido, etc). "
-    'Responda SOMENTE com uma lista JSON de strings, ex: ["mora em São Paulo", "prefere ser chamado de Davi"]. '
-    "NUNCA invente um fato, e NUNCA inclua frases negativas ou sobre falta de informação "
-    '(ex: "não sabe X", "não tem Y") — isso não é um fato, é ausência de fato, e deve ser '
-    "ignorado. Se a fala do usuário não contiver nenhum fato novo, responda [].\n\n"
+    "importa aqui) e extraia fatos novos que o usuário afirmou sobre si mesmo (profissão, "
+    "localização, preferências — inclusive preferências negativas genuínas como 'não gosto de "
+    "X' —, nome preferido, etc).\n"
+    "Cada fato deve ser uma frase COMPLETA, natural e AUTOCONTIDA em português (faz sentido "
+    "sozinha, fora de contexto) — nunca use formato 'chave: valor' (ex: nunca escreva 'Nome: "
+    "Davi', escreva 'se chama Davi' ou 'nome é Davi'). "
+    "Agrupe em um único fato toda informação que pertence junta e faz parte da mesma ideia — "
+    "por exemplo, bairro/setor e cidade formam UM fato de localização só, não dois fatos "
+    "separados; nunca elimine parte da informação original (se o usuário disse bairro e cidade, "
+    "o fato final deve conter os dois). Só separe em fatos diferentes quando forem sobre "
+    "assuntos realmente distintos (ex: profissão é um fato separado de localização).\n"
+    "Exemplo: para a fala \"Eu moro em Goiânia, no setor Perim, trabalho como programador\", a "
+    'resposta correta é ["mora no setor Perim, em Goiânia", "trabalha como programador"] — note '
+    "que o setor e a cidade viraram um fato só, e a resposta é uma frase natural, não um par "
+    "chave:valor.\n"
+    "Responda SOMENTE com uma lista JSON de strings. "
+    "NUNCA invente um fato. NUNCA inclua frases sobre AUSÊNCIA de informação, tipo o assistente "
+    '"não saber" ou "não ter" um dado sobre o usuário (ex: "não sabe a profissão do usuário") — '
+    "isso não é um fato, é ausência de fato. Isso é diferente de uma preferência negativa "
+    'genuína do próprio usuário (ex: "não gosto de café", "não como carne") — essas SÃO fatos '
+    "válidos e devem ser mantidas. Se a fala do usuário não contiver nenhum fato novo, responda "
+    "[].\n\n"
     "Fala do usuário:\n"
 )
 
