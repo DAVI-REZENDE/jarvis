@@ -1,0 +1,6 @@
+__pycache__/
+*.pyc
+memory.db
+saida*.wav
+ref-voice.*
+.claude/
