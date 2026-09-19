@@ -16,7 +16,7 @@ WHISPER_COMPUTE_TYPE = "int8"
 WHISPER_LANGUAGE = "pt"
 
 OLLAMA_URL = "http://localhost:11434/api/chat"
-OLLAMA_MODEL = "qwen2.5:1.5b-instruct-q4_K_M"
+OLLAMA_MODEL = "phi4-mini"
 
 TTS_LANG_CODE = "p"
 TTS_VOICE = "pm_alex"
