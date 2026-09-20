@@ -1,6 +1,7 @@
 __pycache__/
 *.pyc
 memory.db
+settings.json
 saida*.wav
 ref-voice.*
 .claude/

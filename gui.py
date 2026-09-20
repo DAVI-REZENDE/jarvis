@@ -7,6 +7,8 @@ from PySide6.QtCore import QObject, Qt, QTimer, Signal
 from PySide6.QtGui import QColor, QLinearGradient, QPainter, QPen
 from PySide6.QtWidgets import (
     QApplication,
+    QComboBox,
+    QDialog,
     QGraphicsDropShadowEffect,
     QHBoxLayout,
     QLabel,
@@ -18,7 +20,11 @@ from PySide6.QtWidgets import (
 )
 
 import audio
+import llm
 import orchestrator
+import settings
+
+SYSTEM_DEFAULT = "Padrão do sistema"
 
 STATUS_COLORS = {
     "listening": "#38bdf8",  # ciano
@@ -148,6 +154,89 @@ class StatusRing(QWidget):
         painter.drawEllipse(rect.adjusted(inset, inset, -inset, -inset))
 
 
+class SettingsDialog(QDialog):
+    """Diálogo de Configurações: escolher microfone, saída de áudio e modelo
+    do Ollama sem editar código. Microfone e saída aplicam imediatamente
+    (audio.py resolve o dispositivo a cada stream/reprodução); o modelo do
+    Ollama também aplica na próxima chamada ao LLM."""
+
+    _DIALOG_STYLE = (
+        "QDialog { background-color: #0a0e14; }"
+        "QLabel { color: #e2e8f0; font-size: 13px; }"
+        "QComboBox { background-color: #11151c; color: #e2e8f0; border: 1px solid #1f2937; "
+        "border-radius: 6px; padding: 6px; }"
+        "QPushButton { background-color: #1f2937; color: #e2e8f0; border-radius: 6px; "
+        "padding: 8px 16px; }"
+        "QPushButton:hover { background-color: #334155; }"
+    )
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setWindowTitle("Configurações")
+        self.setStyleSheet(self._DIALOG_STYLE)
+        self.resize(360, 220)
+
+        layout = QVBoxLayout(self)
+        layout.setSpacing(12)
+
+        layout.addWidget(QLabel("Microfone (entrada de áudio)"))
+        self.input_combo = QComboBox()
+        self.input_combo.addItems(audio.list_devices("input"))
+        current_input = settings.get("input_device")
+        if current_input in [self.input_combo.itemText(i) for i in range(self.input_combo.count())]:
+            self.input_combo.setCurrentText(current_input)
+        layout.addWidget(self.input_combo)
+
+        layout.addWidget(QLabel("Saída de áudio (alto-falante)"))
+        self.output_combo = QComboBox()
+        self.output_combo.addItem(SYSTEM_DEFAULT)
+        self.output_combo.addItems(audio.list_devices("output"))
+        current_output = settings.get("output_device")
+        self.output_combo.setCurrentText(current_output if current_output else SYSTEM_DEFAULT)
+        layout.addWidget(self.output_combo)
+
+        layout.addWidget(QLabel("Modelo do Ollama"))
+        self.model_combo = QComboBox()
+        models = llm.list_models()
+        current_model = settings.get("ollama_model")
+        if current_model and current_model not in models:
+            models = [current_model] + models
+        self.model_combo.addItems(models)
+        if current_model:
+            self.model_combo.setCurrentText(current_model)
+        layout.addWidget(self.model_combo)
+
+        self.hint_label = QLabel("")
+        self.hint_label.setStyleSheet("color: #fbbf24; font-size: 12px;")
+        self.hint_label.setWordWrap(True)
+        layout.addWidget(self.hint_label)
+
+        buttons = QHBoxLayout()
+        save_button = QPushButton("Salvar")
+        save_button.clicked.connect(self._save)
+        cancel_button = QPushButton("Cancelar")
+        cancel_button.clicked.connect(self.reject)
+        buttons.addWidget(cancel_button)
+        buttons.addWidget(save_button)
+        layout.addLayout(buttons)
+
+    def _save(self):
+        new_input = self.input_combo.currentText()
+        new_output = self.output_combo.currentText()
+        new_model = self.model_combo.currentText()
+
+        input_changed = new_input != settings.get("input_device")
+
+        settings.set("input_device", new_input)
+        settings.set("output_device", None if new_output == SYSTEM_DEFAULT else new_output)
+        settings.set("ollama_model", new_model)
+
+        if input_changed:
+            audio.request_input_restart()
+
+        self.accept()
+
+
 class MainWindow(QMainWindow):
     def __init__(self):
         super().__init__()
@@ -215,6 +304,15 @@ class MainWindow(QMainWindow):
             "padding: 8px; } QPushButton:checked { background-color: #7f1d1d; }"
         )
         controls.addWidget(self.mute_button)
+
+        self.settings_button = QPushButton("Configurações")
+        self.settings_button.clicked.connect(self._open_settings)
+        self.settings_button.setStyleSheet(
+            "QPushButton { background-color: #1f2937; color: #e2e8f0; border-radius: 6px; "
+            "padding: 8px; } QPushButton:hover { background-color: #334155; }"
+        )
+        controls.addWidget(self.settings_button)
+
         layout.addLayout(controls)
 
         self.setCentralWidget(central)
@@ -227,6 +325,10 @@ class MainWindow(QMainWindow):
         else:
             audio.muted_event.clear()
             self.mute_button.setText("Mudo: desligado")
+
+    def _open_settings(self):
+        dialog = SettingsDialog(self)
+        dialog.exec()
 
     def _poll_level(self):
         self.waveform.push_level(audio.get_level())

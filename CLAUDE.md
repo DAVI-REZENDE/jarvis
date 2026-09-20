@@ -136,6 +136,17 @@ Janela principal em PySide6 (`MainWindow`), estilo HUD escuro (paleta ciano/
 - `transcript`: `QTextEdit` somente leitura, mostra o histórico da conversa
   (usuário em cinza, Jarvis em verde).
 - Botão de mudo (`mute_button`): alterna `audio.muted_event`.
+- Botão "Configurações" (`settings_button`): abre `SettingsDialog` (`QDialog`
+  modal) com três `QComboBox`: microfone (`audio.list_devices("input")`),
+  saída de áudio (`audio.list_devices("output")`, com uma opção extra
+  "Padrão do sistema" mapeada para `None`), e modelo do Ollama
+  (`llm.list_models()`, consultando os modelos já baixados via `/api/tags`).
+  Ao clicar "Salvar", grava os três valores em `settings.py`
+  (`settings.set(...)`) e, se o microfone mudou, chama
+  `audio.request_input_restart()` pra aplicar a troca sem reiniciar o app
+  (ver `settings.py` e `audio.py`). Saída de áudio e modelo do Ollama já
+  aplicam sozinhos na próxima fala/resposta, sem nenhuma ação extra — ver
+  seção `settings.py` abaixo pra entender por quê.
 
 Todos os efeitos visuais (glow, anel, gradiente do waveform) reutilizam o
 `_level_timer` já existente (30fps/33ms) — nenhum timer novo foi adicionado,
@@ -173,14 +184,30 @@ Tem um bloco `__main__` que roda o loop imprimindo o transcript no console —
 é o que o alias `jarvis-cli` executa.
 
 ### `audio.py`
-Camada de I/O de áudio, usando `sounddevice`.
-- `mic_chunks()`: generator que abre um `sd.InputStream` no dispositivo
-  configurado (`INPUT_DEVICE_NAME`, com fallback para o dispositivo padrão do
-  sistema se não encontrado por nome) e produz chunks float32 mono do tamanho
-  exigido pelo VAD (`VAD_CHUNK_SAMPLES`). Ignora (não produz) chunks
-  capturados enquanto `speaking_event` ou `muted_event` estiverem setados.
+Camada de I/O de áudio, usando `sounddevice`. Desde a adição de
+`settings.py` (Configurações dinâmicas), dispositivos não são mais lidos
+uma vez de `config.py` — são resolvidos via `settings.get(...)` a cada
+uso, para uma troca feita na GUI valer sem reiniciar o processo.
+- `mic_chunks()`: generator com um **loop externo restartável**. A cada
+  iteração do loop externo, resolve `settings.get("input_device")`, abre um
+  `sd.InputStream` nesse dispositivo (fallback pro padrão do sistema se o
+  nome não for encontrado), e produz chunks float32 mono do tamanho exigido
+  pelo VAD (`VAD_CHUNK_SAMPLES`) via um loop interno que faz
+  `queue.get(timeout=0.2)` — o timeout existe justamente para poder checar
+  periodicamente `_restart_input_event` sem bloquear indefinidamente. Quando
+  `request_input_restart()` é chamado (pela `SettingsDialog` da GUI ao trocar
+  o microfone), o loop interno sai, o `with sd.InputStream(...)` fecha o
+  stream antigo, e o loop externo reabre um novo stream já com o dispositivo
+  atualizado — tudo isso transparente para quem consome o generator
+  (`vad.speech_segments()`/`orchestrator.run()` não precisam saber que a
+  troca aconteceu, só veem os chunks continuarem chegando, com um gap breve
+  durante a reabertura). Ignora (não produz) chunks capturados enquanto
+  `speaking_event` ou `muted_event` estiverem setados.
 - `play_audio(wav, sample_rate)`: toca um array de áudio via `sd.play`/
-  `sd.wait`, setando `speaking_event` durante a reprodução. Roda uma thread
+  `sd.wait`, resolvendo `settings.get("output_device")` a cada chamada — como
+  não há stream persistente de saída (cada fala é uma chamada nova), a troca
+  de dispositivo de saída já aplica na próxima fala sem nenhum mecanismo de
+  restart. Seta `speaking_event` durante a reprodução. Roda uma thread
   auxiliar (`report_levels`) que atualiza `get_level()` a partir do próprio
   áudio de saída, em janelas de ~50ms, para a GUI conseguir reagir
   visualmente à fala do agente (o waveform "responde" tanto ao mic quanto ao
@@ -188,6 +215,11 @@ Camada de I/O de áudio, usando `sounddevice`.
 - `speaking_event` / `muted_event`: `threading.Event`s globais, compartilhados
   entre os módulos — mecanismo central de evitar eco/auto-transcrição e de
   implementar o botão de mudo da GUI.
+- `_restart_input_event` / `request_input_restart()`: mecanismo de restart do
+  microfone em runtime, descrito acima.
+- `list_devices(kind)`: lista nomes de dispositivos de áudio disponíveis
+  (`kind="input"` ou `"output"`), usada pra popular os dropdowns da
+  `SettingsDialog` na GUI.
 - `get_level()` / `_set_level()`: nível de áudio aproximado (RMS), protegido
   por lock, consumido pelo `Waveform` da GUI.
 
@@ -238,7 +270,14 @@ pip `ollama`. `_chat` envia sempre um campo `options` no payload do
 técnicas) depois de testar empiricamente várias combinações — `temperature`
 baixa reduz divagação e mistura de idioma; `repeat_penalty` alto demais
 (testado 1.3) piora bastante a coerência e faz o modelo ignorar a instrução
-de resposta curta, então foi mantido moderado (1.1). Duas funções principais:
+de resposta curta, então foi mantido moderado (1.1). O campo `"model"` do
+payload é resolvido via `settings.get("ollama_model")` a cada chamada (não
+mais uma constante importada de `config.py` uma vez) — troca feita na
+`SettingsDialog` da GUI já vale na próxima chamada, sem reiniciar o app (ver
+`settings.py`). `list_models()` consulta `GET /api/tags` do Ollama (troca
+`/chat` por `/tags` na `OLLAMA_URL`) e retorna os nomes dos modelos já
+baixados (`ollama pull ...`), usado pra popular o dropdown de modelo na GUI.
+Duas funções principais de conversa:
 
 - `chat(user_text, facts=None) -> str`: primeiro chama `actions.handle(user_text)`
   (Task 3) — se `user_text` casar com uma das ações reais suportadas (ver
@@ -415,12 +454,17 @@ módulo deve hardcodar esses valores:
   `INPUT_DEVICE_NAME="HyperX Cloud Stinger 2 Wireless"` (o usuário trocou do
   microfone embutido do Mac para esse headset porque a qualidade do STT
   estava ruim com o mic embutido — ver bug 4), `VAD_CHUNK_SAMPLES=512`.
+  **`INPUT_DEVICE_NAME` aqui é só o valor default/fallback** — o valor
+  efetivamente usado em runtime vive em `settings.py` e pode ser trocado pela
+  GUI (ver seção `settings.py` abaixo); não editar `INPUT_DEVICE_NAME` pra
+  trocar o microfone do dia a dia, isso é feito pela GUI agora.
 - VAD: `VAD_SPEECH_THRESHOLD=0.5`, `VAD_MIN_SPEECH_CHUNKS=3` (~96ms),
   `VAD_MIN_SILENCE_CHUNKS=20` (~640ms).
 - STT: `WHISPER_MODEL_SIZE="small"`, `WHISPER_COMPUTE_TYPE="int8"`,
   `WHISPER_LANGUAGE="pt"`.
 - LLM: `OLLAMA_URL="http://localhost:11434/api/chat"`,
-  `OLLAMA_MODEL="phi4-mini"`.
+  `OLLAMA_MODEL="phi4-mini"` (idem acima: valor default/fallback;
+  `settings.py` guarda o modelo efetivamente usado, trocável pela GUI).
 - `ALLOWED_APPS` (Task 3): dict de apps que `actions.py` tem permissão de
   abrir via `open -a`, chave em português (o que o usuário fala, comparado
   em minúsculas) -> valor com o nome real do app no macOS (ver nota em
@@ -442,6 +486,56 @@ módulo deve hardcodar esses valores:
 - `OLLAMA_OPTIONS`: dict `{"temperature": 0.2, "repeat_penalty": 1.1}` passado
   em toda chamada ao `/api/chat` (Task 2). Ver seção `llm.py` para o
   raciocínio por trás dos valores escolhidos.
+
+### `settings.py`
+Configurações **editáveis pelo usuário em runtime**, pela GUI (diferente de
+`config.py`, que é constantes fixas do projeto, editadas por um
+desenvolvedor no código). Guarda três valores: `input_device`,
+`output_device`, `ollama_model`. Persistidos em `settings.json` na raiz do
+projeto (**gitignored**, nunca commitado — é estado local da máquina do
+usuário, não do projeto).
+
+- Na primeira execução (sem `settings.json` em disco), os defaults vêm de
+  `config.py` (`INPUT_DEVICE_NAME`, `None` para saída = padrão do sistema,
+  `OLLAMA_MODEL`).
+- `get(key)` / `set(key, value)`: API simples, protegida por um
+  `threading.Lock` (a GUI roda em thread separada do orchestrator, ambos
+  podem ler/gravar). **Importante:** `set()` já persiste em disco na hora
+  (escreve `settings.json` inteiro a cada chamada) — não é preciso um
+  "salvar" separado.
+- **Por que outros módulos leem `settings.get(...)` a cada uso, em vez de
+  importar o valor uma vez no topo do arquivo** (como `config.py` é usado):
+  esse é o mecanismo inteiro que permite a GUI mudar essas configurações sem
+  reiniciar o processo. Um `from config import X` no topo de um módulo fixa
+  o valor no momento do import; `settings.get("x")` chamado dentro de uma
+  função relê o valor atual a cada chamada. `llm.py` (`_chat`) e `audio.py`
+  (`mic_chunks`, `play_audio`) foram atualizados para esse padrão
+  especificamente por causa disso.
+- **Troca de modelo do Ollama e de saída de áudio aplicam imediatamente**,
+  sem nenhum mecanismo especial: `llm._chat` resolve `settings.get("ollama_model")`
+  a cada chamada ao `/api/chat`, e `audio.play_audio` resolve
+  `settings.get("output_device")` a cada reprodução — como nenhum dos dois
+  mantém um recurso "aberto" entre chamadas, o próximo uso já reflete a
+  configuração nova.
+- **Troca de microfone é mais delicada** porque `audio.mic_chunks()` mantém
+  um `sd.InputStream` **aberto continuamente** durante toda a sessão (é um
+  generator infinito consumido por `vad.speech_segments()`). Pra suportar
+  troca em runtime sem reiniciar o app, `mic_chunks()` foi reestruturado com
+  um loop externo restartável: a cada iteração externa reabre o
+  `InputStream` com `settings.get("input_device")` atual, e o loop interno de
+  captura usa `queue.get(timeout=0.2)` (em vez de um `get()` bloqueante
+  simples) especificamente pra poder checar periodicamente se
+  `audio._restart_input_event` foi setado — quando é, o `with
+  sd.InputStream(...)` fecha o stream atual e o loop externo abre um novo. A
+  `SettingsDialog` da GUI chama `audio.request_input_restart()` depois de
+  salvar um microfone diferente do atual. `vad.py`/`orchestrator.py` não
+  precisaram de nenhuma mudança pra isso funcionar — o restart é totalmente
+  interno ao generator de `audio.py`, transparente pra quem consome (só um
+  gap breve de alguns milissegundos durante a reabertura). Testado
+  manualmente: chunks continuam fluindo antes/depois de um
+  `request_input_restart()` sem crash e sem gap perceptível.
+
+Bloco `__main__`: imprime as configurações atuais carregadas.
 
 ### `TASKS.md`
 Backlog ativo de melhorias em andamento, executado por agentes dedicados um
@@ -474,6 +568,8 @@ como está o clima para o voo hoje."), usada como argumento default em
 | Não usar few-shot examples no `SYSTEM_PROMPT` (Task 2) | Testado: few-shot fez o modelo ignorar a instrução de "1 frase curta" em perguntas abertas (chegou a responder com lista numerada de 5 itens) — pior que sem few-shot |
 | Usar **um** few-shot example no `FACT_EXTRACTION_PROMPT` (Task 5) | Testado: sem exemplo o modelo fragmentava/alucinava fatos compostos; com um exemplo rico ficou estável; com dois exemplos a estabilidade piorou (erro de parse JSON, fato sumindo em repetição) — diferente da conclusão da Task 2 porque extração de JSON é tarefa mais mecânica/estruturada que resposta de chat aberta |
 | Manter dedup por substring simples em `memory.py` (Task 5) | Testado `SequenceMatcher.ratio()` e Jaccard por palavra como alternativas — ambos deram falsos positivos perigosos (ex: nomes preferidos diferentes, ou fato oposto "não gosta de X" vs "gosta de X" pontuando tão "similar" quanto duplicata real) sem um threshold confiável; risco de descartar fato genuinamente novo é pior que o problema atual |
+| `settings.py` separado de `config.py`, lido via `get()` a cada uso (não import uma vez) | Usuário pediu poder trocar mic/saída/modelo pela GUI sem editar código nem reiniciar o app; um `from config import X` no topo fixaria o valor no import, `settings.get(x)` relê a cada chamada |
+| Reestruturar `mic_chunks()` com loop externo restartável em vez de reiniciar o processo pra trocar de mic | Usuário pediu explicitamente troca de microfone sem reiniciar o app; `queue.get(timeout=0.2)` permite checar `_restart_input_event` periodicamente sem bloquear a captura |
 
 ## Bugs corrigidos / lições aprendidas
 

@@ -3,7 +3,8 @@ import json
 import requests
 
 import actions
-from config import OLLAMA_MODEL, OLLAMA_OPTIONS, OLLAMA_URL, SYSTEM_PROMPT
+import settings
+from config import OLLAMA_OPTIONS, OLLAMA_URL, SYSTEM_PROMPT
 
 FACT_EXTRACTION_PROMPT = (
     "Leia a fala do usuário abaixo (ignore completamente a resposta do assistente, ela não "
@@ -58,11 +59,23 @@ def _is_action_request(text: str) -> bool:
     return any(keyword in lowered for keyword in ACTION_KEYWORDS)
 
 
+def list_models() -> list[str]:
+    """Lista os modelos já baixados no Ollama (ollama pull ...), pra popular
+    o dropdown de Configurações na GUI."""
+    tags_url = OLLAMA_URL.rsplit("/", 1)[0] + "/tags"
+    try:
+        response = requests.get(tags_url, timeout=5)
+        response.raise_for_status()
+        return [m["name"] for m in response.json().get("models", [])]
+    except requests.RequestException:
+        return []
+
+
 def _chat(messages: list[dict]) -> str:
     response = requests.post(
         OLLAMA_URL,
         json={
-            "model": OLLAMA_MODEL,
+            "model": settings.get("ollama_model"),
             "messages": messages,
             "stream": False,
             "options": OLLAMA_OPTIONS,
