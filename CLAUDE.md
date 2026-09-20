@@ -246,9 +246,9 @@ CPU/RAM, importante dado o limite de 8GB), `language="pt"` fixo (sem
 detecção automática de idioma). `transcribe(audio)` aceita tanto um array
 numpy (float32, mono, 16kHz) quanto um caminho de arquivo.
 
-Bloco `__main__`: `python stt.py [caminho.wav]`, com `hello.m4a` como
-default — arquivo de fixture de teste (~8s, "Olá Jarvis, quero que você
-consulte como está o clima para o voo hoje.").
+Bloco `__main__`: `python stt.py <caminho.wav>` — exige um caminho de áudio
+como argumento (o antigo fixture `hello.m4a`, uma gravação real de voz, foi
+removido do repositório antes de publicar no GitHub; não há mais um default).
 
 ### `tts.py`
 Wrapper sobre **Kokoro TTS** (`KPipeline`), singleton em `_pipeline`.
@@ -369,12 +369,12 @@ etc — fora de escopo da Task 3, deliberadamente).
 
   **Task 5 — granularidade/qualidade da extração.** `FACT_EXTRACTION_PROMPT`
   foi revisado porque a extração fragmentava informação relacionada (ex: a
-  frase "moro em Goiânia, no setor Perim, trabalho como programador" perdia
-  completamente "no setor Perim", produzindo só `['Moro em Goiânia',
+  frase "moro em Curitiba, no bairro Água Verde, trabalho como programador" perdia
+  completamente "no bairro Água Verde", produzindo só `['Moro em Curitiba',
   'Trabalho como programador']`). O prompt agora instrui explicitamente a
   **agrupar** informação que pertence junta num único fato coeso (ex:
   bairro/setor + cidade = um fato só), a produzir frases naturais e
-  autocontidas (proibindo formato "chave: valor" tipo "Nome: Davi"), e a
+  autocontidas (proibindo formato "chave: valor" tipo "Nome: João"), e a
   distinguir claramente dois tipos de negação: (1) ausência de informação
   ("não sabe X") — continua descartado — vs (2) preferência negativa genuína
   do usuário ("não gosto de café") — agora explicitamente mantida como fato
@@ -389,11 +389,11 @@ etc — fora de escopo da Task 3, deliberadamente).
   2).** Foi testado explicitamente por instrução deste backlog, já que a Task
   2 tinha descartado few-shot no prompt de chat aberto. Resultado real: sem
   nenhum exemplo no prompt, o phi4-mini continuava fragmentando/alucinando
-  (`['Moro em Goiânia', 'Perigo de Goiânia', 'Trabalho como Programador']` —
-  chegou a inventar "Perigo de Goiânia" a partir de "setor Perim"). Com **um**
-  exemplo rico no prompt (a própria frase do setor Perim, mostrando o
+  (`['Moro em Curitiba', 'Perigo de Curitiba', 'Trabalho como Programador']` —
+  chegou a inventar "Perigo de Curitiba" a partir de "bairro Água Verde"). Com **um**
+  exemplo rico no prompt (a própria frase do bairro Água Verde, mostrando o
   agrupamento correto), o resultado ficou estável e correto em repetições:
-  `['moro no setor Perim, em Goiânia', 'trabalho como programador']`. Uma
+  `['moro no bairro Água Verde, em Curitiba', 'trabalho como programador']`. Uma
   variante com **dois** exemplos foi testada e piorou a estabilidade (erro de
   parse de JSON numa repetição, fato de preferência negativa sumindo em outra
   repetição) — provavelmente por o modelo pequeno "seguir demais" o padrão de
@@ -427,9 +427,9 @@ nunca commitar). Duas tabelas:
   real, não hipotético: nenhum dos dois separa de forma confiável duplicata
   real de fato genuinamente diferente com um único threshold. Exemplos
   medidos: `SequenceMatcher` deu 0.836 para `"prefere ser chamado de Chefe"`
-  vs `"prefere ser chamado de Davi"` (nomes **diferentes**, não deveria ser
+  vs `"prefere ser chamado de João"` (nomes **diferentes**, não deveria ser
   duplicata) — mais alto que 0.700 para o par que **é** duplicata real
-  (`"mora em Goiânia"` vs `"mora na cidade de Goiânia"`). Jaccard por palavra
+  (`"mora em Curitiba"` vs `"mora na cidade de Curitiba"`). Jaccard por palavra
   foi ainda mais perigoso: deu 0.667 para `"gosta de café"` vs `"não gosta de
   café"` — **fatos opostos**, mesma pontuação do par de duplicata real. Usar
   qualquer um desses com threshold fixo arriscaria descartar silenciosamente
@@ -544,10 +544,12 @@ diretamente para saber o que está planejado a seguir e o protocolo que cada
 agente deve seguir ao concluir uma task (rodar validações, atualizar este
 CLAUDE.md se o comportamento mudou, reportar um resumo).
 
-### `hello.m4a`
-Fixture de áudio de teste (~8s, fala: "Olá Jarvis, quero que você consulte
-como está o clima para o voo hoje."), usada como argumento default em
-`stt.py` para teste manual rápido do STT sem precisar gravar nada.
+### Fixture de áudio de teste (removida)
+O projeto teve um `hello.m4a` (gravação real de voz, ~8s) usado como default
+em `stt.py` pra teste manual do STT. Foi removido do repositório antes de
+publicar no GitHub, por ser uma gravação de voz de uma pessoa real. Pra
+testar `stt.py` manualmente, grave/forneça qualquer `.wav`/`.m4a` curto em
+português e passe o caminho como argumento (`python stt.py <caminho>`).
 
 ## Decisões técnicas e o porquê (resumo)
 
@@ -633,11 +635,11 @@ como está o clima para o voo hoje."), usada como argumento default em
 - **(Descoberto na Task 6 — QA final) Fatos conflitantes não são resolvidos
   nem versionados.** `memory.py` só adiciona e deduplica por substring; não
   existe conceito de "atualizar" ou "substituir" um fato antigo quando o
-  usuário diz algo nele contraditório (ex: usuário disse "moro em Goiânia"
+  usuário diz algo nele contraditório (ex: usuário disse "moro em Curitiba"
   numa sessão e depois "moro em Belo Horizonte e trabalho como designer" em
   outra — ambos os fatos de localização ficam salvos, coexistindo). Testado
   manualmente: com os dois fatos de cidade no banco, `llm.chat("Onde eu
-  moro?", facts=facts)` respondeu com a cidade mais antiga (Goiânia), não a
+  moro?", facts=facts)` respondeu com a cidade mais antiga (Curitiba), não a
   mais recente — o LLM escolhe arbitrariamente entre fatos conflitantes, sem
   garantia de preferir o mais novo. Isso é uma limitação real, não corrigida
   nesta task (fora do escopo do QA, seria uma nova feature de "atualização de
@@ -658,17 +660,17 @@ como está o clima para o voo hoje."), usada como argumento default em
   — é considerada uma limitação residual e aceitável do modelo, não algo a
   perseguir mais agressivamente (tentativas mais fortes, como
   `repeat_penalty=1.3`, pioraram a coerência geral). Também foi observado que
-  o modelo às vezes interpreta mal um termo isolado incomum (ex.: "setor
-  Perim" confundido com "perímetro") — não é mistura de idioma, é limitação
+  o modelo às vezes interpreta mal um termo isolado incomum (ex.: "bairro
+  Água Verde" confundido com "perímetro") — não é mistura de idioma, é limitação
   de compreensão do modelo pequeno em geral.
 - (Resolvido na Task 5) A extração de fatos fragmentava informação
   relacionada em entradas separadas em vez de uma frase coesa (ex.: "mora em
-  Goiânia" e "no setor Perim" como duas entradas em vez de uma) — corrigido
+  Curitiba" e "no bairro Água Verde" como duas entradas em vez de uma) — corrigido
   no `FACT_EXTRACTION_PROMPT` com instrução explícita de agrupamento + um
   único few-shot example. A deduplicação em `memory.py` continua sendo
   substring match simples (decisão deliberada, ver seção `memory.py`) —
   ainda pode deixar passar duas entradas com fraseamento bem diferente para
-  o mesmo fato (ex.: "mora em Goiânia" vs "mora na cidade de Goiânia" em
+  o mesmo fato (ex.: "mora em Curitiba" vs "mora na cidade de Curitiba" em
   turnos separados), mas isso é raro na prática agora que a causa raiz
   (fragmentação numa única extração) foi corrigida, e alternativas por
   similaridade testadas se mostraram mais arriscadas (ver `memory.py`).
@@ -697,9 +699,9 @@ algo que já foi tentado e descartado com evidência real:
   `difflib.SequenceMatcher.ratio()` e Jaccard por palavras (sem stopwords)
   como substitutos do substring match simples. Ambos deram falsos positivos
   perigosos com um único threshold fixo: `SequenceMatcher` pontuou mais alto
-  (0.836) para dois nomes preferidos **diferentes** ("Chefe" vs "Davi") do que
-  para uma duplicata real (0.700, "mora em Goiânia" vs "mora na cidade de
-  Goiânia"); Jaccard pontuou 0.667 tanto pra duplicata quanto pra um par de
+  (0.836) para dois nomes preferidos **diferentes** ("Chefe" vs "João") do que
+  para uma duplicata real (0.700, "mora em Curitiba" vs "mora na cidade de
+  Curitiba"); Jaccard pontuou 0.667 tanto pra duplicata quanto pra um par de
   fatos **opostos** ("gosta de café" vs "não gosta de café"). Risco de perder
   silenciosamente um fato genuinamente novo/atualizado é pior que o problema
   atual (raras quase-duplicatas). Mantido substring simples.
@@ -769,7 +771,7 @@ jarvis-cli                 # modo console, sem GUI (bom pra debug, mostra transc
 
 # Testar componentes isoladamente (sempre com a venv jarvis-agent):
 ~/.venvs/jarvis-agent/bin/python vad.py            # só detecção de fala
-~/.venvs/jarvis-agent/bin/python stt.py [wav]      # só transcrição (default: hello.m4a)
+~/.venvs/jarvis-agent/bin/python stt.py <wav>      # só transcrição (exige um caminho de áudio)
 ~/.venvs/jarvis-agent/bin/python llm.py            # só cliente Ollama (chat + extração de fatos)
 ~/.venvs/jarvis-agent/bin/python memory.py         # só armazenamento de fatos
 

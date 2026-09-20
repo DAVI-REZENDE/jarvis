@@ -37,7 +37,7 @@ conhecidas. Este arquivo é a fonte de contexto pra todos os agentes seguintes.
 
 ## [x] Task 2 — Melhorar naturalidade das respostas do LLM
 O phi4-mini às vezes responde de forma estranha/repetitiva/mistura idioma
-(ex: "Perim de Goiânia, você está?", "Puedo ajudá-lo"). Investigar e ajustar:
+(ex: "Água Verde de Curitiba, você está?", "Puedo ajudá-lo"). Investigar e ajustar:
 revisar `SYSTEM_PROMPT`, testar variações de instrução e (se necessário)
 few-shot examples curtos no prompt, ajustar parâmetros de geração da chamada
 ao Ollama (temperature, top_p, repeat_penalty) via `/api/chat` `options`.
@@ -73,8 +73,8 @@ screenshot automaticamente; documentar o que foi implementado pro usuário
 conferir).
 
 ## [x] Task 5 — Melhorar granularidade/qualidade da extração de fatos
-Hoje fatos relacionados saem fragmentados (ex: "mora em Goiânia" e "no setor
-Perim" como duas entradas separadas em vez de uma). Revisar
+Hoje fatos relacionados saem fragmentados (ex: "mora em Curitiba" e "no bairro
+Água Verde" como duas entradas separadas em vez de uma). Revisar
 `FACT_EXTRACTION_PROMPT` em `llm.py` pra produzir fatos mais completos e
 autocontidos (uma frase por fato, mas com contexto suficiente pra fazer
 sentido sozinha), e revisar a deduplicação em `memory.py` (hoje é

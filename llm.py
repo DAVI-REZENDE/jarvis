@@ -13,14 +13,14 @@ FACT_EXTRACTION_PROMPT = (
     "X' —, nome preferido, etc).\n"
     "Cada fato deve ser uma frase COMPLETA, natural e AUTOCONTIDA em português (faz sentido "
     "sozinha, fora de contexto) — nunca use formato 'chave: valor' (ex: nunca escreva 'Nome: "
-    "Davi', escreva 'se chama Davi' ou 'nome é Davi'). "
+    "João', escreva 'se chama João' ou 'nome é João'). "
     "Agrupe em um único fato toda informação que pertence junta e faz parte da mesma ideia — "
     "por exemplo, bairro/setor e cidade formam UM fato de localização só, não dois fatos "
     "separados; nunca elimine parte da informação original (se o usuário disse bairro e cidade, "
     "o fato final deve conter os dois). Só separe em fatos diferentes quando forem sobre "
     "assuntos realmente distintos (ex: profissão é um fato separado de localização).\n"
-    "Exemplo: para a fala \"Eu moro em Goiânia, no setor Perim, trabalho como programador\", a "
-    'resposta correta é ["mora no setor Perim, em Goiânia", "trabalha como programador"] — note '
+    "Exemplo: para a fala \"Eu moro em Curitiba, no bairro Água Verde, trabalho como programador\", a "
+    'resposta correta é ["mora no bairro Água Verde, em Curitiba", "trabalha como programador"] — note '
     "que o setor e a cidade viraram um fato só, e a resposta é uma frase natural, não um par "
     "chave:valor.\n"
     "Responda SOMENTE com uma lista JSON de strings. "

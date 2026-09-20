@@ -22,5 +22,6 @@ def transcribe(audio) -> str:
 if __name__ == "__main__":
     import sys
 
-    path = sys.argv[1] if len(sys.argv) > 1 else "hello.m4a"
-    print(transcribe(path))
+    if len(sys.argv) < 2:
+        sys.exit("Uso: python stt.py <caminho_do_audio>")
+    print(transcribe(sys.argv[1]))
