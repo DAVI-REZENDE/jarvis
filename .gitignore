@@ -4,4 +4,5 @@ memory.db
 settings.json
 saida*.wav
 ref-voice.*
+view-example.mov
 .claude/

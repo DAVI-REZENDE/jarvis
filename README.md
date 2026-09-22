@@ -10,6 +10,8 @@
 ![SQLite](https://img.shields.io/badge/Memória-SQLite-003B57?logo=sqlite&logoColor=white)
 ![Offline](https://img.shields.io/badge/Inferência-100%25%20local-success)
 
+![Demonstração do Jarvis em uso](./demo.gif)
+
 ## Destaques técnicos
 
 - **Pipeline de voz completo local**: captura de áudio → detecção de fala em tempo real (Silero VAD, máquina de estados) → transcrição (faster-whisper) → raciocínio (LLM via Ollama) → síntese de voz (Kokoro TTS), tudo rodando como processo único com modelos carregados uma única vez (padrão singleton).
