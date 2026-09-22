@@ -323,10 +323,11 @@ LLM envolvido na decisão):
   hoje"/"dia de hoje"; resposta também 100% local, com dia da semana e mês
   por extenso (ex: "Hoje é quinta-feira, 19 de setembro de 2026."). Também
   sem chamada ao LLM.
-- **Abrir um app do Mac**: `_OPEN_APP_PATTERN` casa "abrir/abra/abre" (+
-  opcionalmente "o/a", "app/aplicativo") e captura o resto da frase como
-  candidato a nome de app — esse candidato **nunca** vai direto pro
-  `subprocess`. `_match_allowed_app(candidate)` primeiro remove frases de
+- **Abrir um app do Mac**: `_OPEN_APP_PATTERN` casa os verbos "abrir/abra/
+  abre" e também "tocar/toca/toque/coloca/colocar/põe/bota" (+ opcionalmente
+  "o/a/uma/um", "app/aplicativo/música/musica/som") e captura o resto da
+  frase como candidato a nome de app — esse candidato **nunca** vai direto
+  pro `subprocess`. `_match_allowed_app(candidate)` primeiro remove frases de
   preenchimento comuns ("por favor", "pra mim", "agora" etc.), depois checa
   se alguma chave de `ALLOWED_APPS` (`config.py`) está contida no texto
   limpo, e só se não achar nada tenta um fuzzy-match conservador
@@ -337,8 +338,28 @@ LLM envolvido na decisão):
   lista de argumentos, nunca `shell=True` nem concatenação de string, pra
   eliminar risco de shell injection. Se não houver match (app não
   reconhecido ou fora da whitelist), retorna `None` e quem decide o que
-  fazer é `llm.chat` (cai na recusa padrão, porque "abrir" ainda está em
-  `ACTION_KEYWORDS`).
+  fazer é `llm.chat` (cai na recusa padrão, porque "abrir"/"toca uma
+  música"/etc ainda estão em `ACTION_KEYWORDS`).
+
+  **Bug real encontrado em uso (pós-Task 3):** "toca uma música no Spotify"
+  não batia com `_OPEN_APP_PATTERN` (só reconhecia "abrir/abra/abre") nem
+  com `ACTION_KEYWORDS`, então caía direto no chat normal — o LLM respondia
+  algo tipo "Abre o Spotify e selecione a música..." **sem executar nada**,
+  dando a impressão de instrução em vez de ação. Corrigido ampliando os
+  verbos reconhecidos em `_OPEN_APP_PATTERN` pra incluir formas coloquiais
+  de "tocar algo" ("toca", "coloca", "põe", "bota"), e adicionando frases
+  como "toca uma música"/"coloca uma música" em `ACTION_KEYWORDS` como rede
+  de segurança pro caso do app pedido não estar na whitelist (aí cai na
+  recusa honesta, em vez do LLM especular). **Importante: isso só faz o app
+  abrir, não toca uma faixa específica** — controlar reprodução de uma
+  música específica exigiria integração com a API/AppleScript do app, fora
+  de escopo. A resposta permanece "Abrindo {app}." mesmo nesses casos, pra
+  não prometer mais do que é feito de fato. Testado: "toca uma música no
+  Spotify" abre o Spotify; "toca uma música no YouTube" (fora da whitelist)
+  recusa corretamente; frases não relacionadas com os mesmos verbos (ex:
+  "eu gosto de tocar violão", "coloca a mesa pra janta") não disparam nada,
+  porque a ação só executa se `_match_allowed_app` achar um app real na
+  whitelist — o verbo sozinho nunca é suficiente.
 
   **Nota de nomes de app no macOS:** confirmado manualmente que `open -a`
   precisa do nome real do bundle do app, que continua em inglês mesmo com o

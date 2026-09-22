@@ -47,11 +47,17 @@ _MONTHS = (
 _TIME_PATTERN = re.compile(r"\bque\s+horas\b", re.IGNORECASE)
 _DATE_PATTERN = re.compile(r"\b(que\s+dia|que\s+data|data\s+de\s+hoje|dia\s+de\s+hoje)\b", re.IGNORECASE)
 
-# Casa "abrir/abra/abre" + opcionalmente "o/a" + opcionalmente "app/aplicativo"
-# e captura o resto da frase como candidato a nome de app. O candidato NUNCA
-# é usado direto em subprocess — só depois de passar por `_match_allowed_app`.
+# Casa "abrir/abra/abre" (ou verbos equivalentes que na prática só conseguem
+# abrir o app, não tocar uma faixa específica: "tocar/toca/coloca/põe/bota")
+# + opcionalmente "o/a" + opcionalmente "app/aplicativo" e captura o resto da
+# frase como candidato a nome de app. O candidato NUNCA é usado direto em
+# subprocess — só depois de passar por `_match_allowed_app`. Frases como
+# "toca uma música no Spotify" caem aqui: o app abre, mas nenhuma faixa
+# específica é tocada (isso exigiria integração com a API do app, fora de
+# escopo) — a resposta ("Abrindo Spotify.") é honesta sobre isso.
 _OPEN_APP_PATTERN = re.compile(
-    r"\b(?:abrir|abra|abre)\b\s*(?:o\s+|a\s+)?(?:aplicativo\s+|app\s+)?(.+)",
+    r"\b(?:abrir|abra|abre|tocar|toca|toque|coloca|colocar|põe|bota)\b"
+    r"\s*(?:o\s+|a\s+|uma\s+|um\s+)?(?:aplicativo\s+|app\s+|música\s+|musica\s+|som\s+)*(.+)",
     re.IGNORECASE,
 )
 
